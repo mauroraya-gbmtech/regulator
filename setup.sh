@@ -31,23 +31,24 @@ then
 fi
 
 if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
-    echo "Uso: ./setup.sh <CLICKUP_WORKSPACE_ID> <CLICKUP_CHANNEL_ID> <CLICKUP_WEBHOOK_URL>"
+    echo "Uso: ./setup.sh <CLICKUP_API_KEY> <CLICKUP_WORKSPACE_ID> <CLICKUP_CHANNEL_ID>"
     exit 1
 fi
 
-export CLICKUP_WORKSPACE_ID=$1
-export CLICKUP_CHANNEL_ID=$2
-export CLICKUP_WEBHOOK_URL=$3
+export CLICKUP_API_KEY=$1
+export CLICKUP_WORKSPACE_ID=$2
+export CLICKUP_CHANNEL_ID=$3
 
 echo "Variáveis de ambiente configuradas:"
+echo "CLICKUP_API_KEY=$CLICKUP_API_KEY"
 echo "CLICKUP_WORKSPACE_ID=$CLICKUP_WORKSPACE_ID"
 echo "CLICKUP_CHANNEL_ID=$CLICKUP_CHANNEL_ID"
-echo "CLICKUP_WEBHOOK_URL=$CLICKUP_WEBHOOK_URL"
 
 DEFAULT_NODE=$(nvm alias default | awk '{print $3}')
 
-echo "Iniciando o monitoramento dos processos..."
 nvm use 20
+
+echo "Iniciando o monitoramento dos processos..."
 node main.js
 
 if [ -n "$DEFAULT_NODE" ]; then

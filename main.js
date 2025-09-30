@@ -1,94 +1,163 @@
+const clickUp = require("@api/clickup");
+
 const { exec } = require("child_process");
 const util = require("util");
 
 const execAsync = util.promisify(exec);
 
-const processesMap = new Map();
+const pm2ProcessesMap = new Map();
 
-const SAMPLES_INTERVAL = 60 * 1000;
+const SAMPLES_INTERVAL = 30 * 1000;
 const SAMPLES_LENGTH = 5;
 
-const Status = {
-	LOW: "LOW",
-	BELOW_NORMAL: "BELOW_NORMAL",
-	NORMAL: "NORMAL",
-	ABOVE_NORMAL: "ABOVE_NORMAL",
-	HIGH: "HIGH"
+/**
+ * @enum
+ */
+const Usage = {
+  LOW: "LOW",
+  BELOW_NORMAL: "BELOW_NORMAL",
+  NORMAL: "NORMAL",
+  ABOVE_NORMAL: "ABOVE_NORMAL",
+  HIGH: "HIGH"
 };
 
+/**
+ * @typedef {Object} DetectionResult
+ * @property {Usage} status
+ * @property {string} message
+ */
+
+/**
+ * @param {number[]} samples
+ * @returns {DetectionResult}
+ */
 function detectSpike(samples) {
-	const max = Math.max(...samples);
-	const min = Math.min(...samples);
+  const max = Math.max(...samples);
+  const min = Math.min(...samples);
 
-	if (max - min > 200 * 1024 * 1024) {
-		return {
-			status: Status.HIGH,
-			message: `Uso de memória RAM teve um pico de ${(max - min) / (1024 * 1024)} MB`
-		};
-	}
+  const diff = max - min;
 
-	return {
-		status: Status.NORMAL,
-		message: `Nenhum pico de memória RAM detectado`
-	};
+  if (diff > 100) {
+    return {
+      status: Usage.HIGH,
+      message: `Uso de memória RAM teve um pico de ${diff} MB`
+    };
+  }
+
+  return {
+    status: Usage.NORMAL,
+    message: "Nenhum pico de memória RAM detectado"
+  };
 }
 
+/**
+ * @param {number[]} samples
+ * @returns {DetectionResult}
+ */
 function detectTrend(samples) {
-	const first = samples[0];
-	const last = samples[samples.length - 1];
+  const first = samples[0];
+  const last = samples[samples.length - 1];
 
-	const slope = (last - first) / first;
+  const slope = (last - first) / first;
 
-	if (slope > 0.5) {
-		return {
-			status: Status.ABOVE_NORMAL,
-			message: `Uso de memória RAM aumentou em ${(slope * 100).toFixed(1)}%`
-		};
-	}
+  if (slope > 0.5) {
+    return {
+      status: Usage.ABOVE_NORMAL,
+      message: `Uso de memória RAM aumentou em ${(slope * 100).toFixed(1)}%`
+    };
+  }
 
-	return {
-		status: Status.NORMAL,
-		message: `Nenhuma tendência de aumento de memória RAM detectado`
-	};
+  return {
+    status: Usage.NORMAL,
+    message: "Nenhuma tendência de aumento de memória RAM detectado"
+  };
 }
 
-async function actionNotifyClickUp(process, detectorType, status, actionResult) {
-  const payload = {
-    workSpaceId: process.env.CLICKUP_WORKSPACE_ID,
-    channelId: process.env.CLICKUP_CHANNEL_ID,
-    message: {
-      processId: process.id,
-      processName: process.name,
-      detectorType,
-      status,
-      actions: {
-        "stop-pm2": actionResult
-      }
-    }
+/**
+ * @typedef {Object} PM2Process
+ * @property {number} id
+ * @property {string} name
+ * @property {number} memory
+ */
+
+/**
+ * @enum
+ */
+const Status = {
+  SUCCESS: "SUCCESS",
+  FAILURE: "FAILURE"
+};
+
+/**
+ * @typedef {Object} ActionResult
+ * @property {Status} status
+ * @property {string} message
+ */
+
+/**
+ * @param {PM2Process} pm2Process
+ * @param {DetectionResult} result
+ * @returns {Promise<ActionResult>}
+ */
+async function actionNotifyClickUp(pm2Process, result) {
+  const message = [
+    `⚙️ ${pm2Process.name}`,
+    `🔊 ${result.message}`
+  ].join('\n');
+
+  /** @type {CreateChatMessageBodyParam} */
+  const body = {
+    type: "message",
+    content_format: "text/md",
+    content: message
+  };
+
+  /** @type {CreateChatMessageMetadataParam} */
+  const metadata = {
+    workspace_id: process.env.CLICKUP_WORKSPACE_ID,
+    channel_id: process.env.CLICKUP_CHANNEL_ID
   };
 
   try {
-    const response = await fetch(process.env.CLICKUP_WEBHOOK_URL, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    const response = await clickUp.createChatMessage(body, metadata);
 
     if (!response.ok) {
-      console.error("Erro ao tentar criar mensagem no ClickUp");
+      return {
+        status: Status.FAILURE,
+        message: "Erro ao tentar enviar mensagem para o ClickUp"
+      };
     }
+
+    return {
+      status: Status.SUCCESS,
+      message: "Mensagem enviada ao ClickUp com sucesso"
+    };
   } catch (err) {
-    console.error("Erro ao tentar mandar mensagem para o ClickUp:", err);
+    return {
+      status: Status.FAILURE,
+      message: `Erro inesperado ao tentar enviar mensagem para o ClickUp: ${err.message}`
+    };
   }
 }
 
-async function actionStopPM2Process(process) {
+/**
+ * @param {PM2Process} pm2Process
+ * @param {DetectionResult} result
+ * @returns {Promise<ActionResult>}
+ */
+async function actionStopPM2Process(pm2Process, result) {
   try {
-    await execAsync(`pm2 stop ${process.id}`);
-    console.log(`Processo do PM2 ${process.name} foi parado com sucesso`);
-    return "successfull";
+    await execAsync(`pm2 stop ${pm2Process.id}`);
+
+    return {
+      status: Status.SUCCESS,
+      message: `Processo do PM2 ${pm2Process.name} foi parado com sucesso`
+    };
   } catch (err) {
-    console.error(`Erro ao tentar parar processo do PM2 ${process.name}:`, err);
-    return "failed";
+    return {
+      status: Status.FAILURE,
+      message: `Erro ao tentar parar processo do PM2 ${pm2Process.name}`
+    };
   }
 }
 
@@ -96,6 +165,9 @@ function toMB(bytes) {
   return Math.round(bytes / 1024 / 1024);
 }
 
+/**
+ * @returns {Promise<PM2Process[]>}
+ */
 async function getPM2Processes() {
   try {
     const { stdout } = await execAsync("pm2 jlist");
@@ -105,12 +177,12 @@ async function getPM2Processes() {
       throw new Error("Não foi possível encontrar uma saída JSON do comando 'pm2 jlist'");
     }
 
-    const processes = JSON.parse(stdout.slice(jsonStart));
+    const pm2ProcessesList = JSON.parse(stdout.slice(jsonStart));
 
-    return processes.map(process => ({
-      id: process.pm_id,
-      name: process.name,
-      memory: toMB(process.monit.memory)
+    return pm2ProcessesList.map(p => ({
+      id: pm2Process.pm_id,
+      name: pm2Process.name,
+      memory: toMB(pm2Process.monit.memory)
     }));
   } catch (err) {
     console.error("Erro ao tentar ler os processos do PM2:", err);
@@ -118,44 +190,76 @@ async function getPM2Processes() {
   }
 }
 
-async function monitorProcesses() {
-  const processesList = await getPM2Processes();
+const rules = {
+  [Usage.HIGH]: [
+    actionNotifyClickUp,
+    actionStopPM2Process,
+  ],
+  [Usage.ABOVE_NORMAL]: [
+    actionNotifyClickUp
+  ]
+};
 
-  for (const process of processesList) {
-    if (!processesMap.has(process.id)) {
-      processesMap.set(process.id, {
-        name: process.name,
-        samples: []
-      });
+async function regulatePM2Processes() {
+  const pm2ProcessesList = await getPM2Processes();
+
+  for (const pm2Process of pm2ProcessesList) {
+    if (!pm2ProcessesMap.has(pm2Process.id)) {
+      pm2ProcessesMap.set(pm2Process.id, { name: pm2Process.name, samples: [] });
     }
 
-    const entry = processesMap.get(process.id);
+    const entry = pm2ProcessesMap.get(pm2Process.id);
 
-    entry.samples.push(process.memory);
+    //teste
+    if (
+      entry.samples.length === 0 &&
+      pm2Process.id === 20
+    ) {
+      entry.samples.push(300);
+    } else {
+      entry.samples.push(pm2Process.memory);
+    }
 
     if (entry.samples.length > SAMPLES_LENGTH) {
       entry.samples.shift();
     }
 
-    const spikeResult = detectSpike(entry.samples);
-    const trendResult = detectTrend(entry.samples);
+    const detectionResults = [
+      detectSpike(entry.samples), 
+      detectTrend(entry.samples)
+    ];
 
-    console.log(`${process.id} - ${process.name} - [${entry.samples}] - SPIKE: ${spikeResult.status} - TREND: ${trendResult.status}`);
+    for (const detectionResult of detectionResults) {
+      const actions = rules[detectionResult.status] ?? [];
 
-    if (spikeResult.status === Status.HIGH) {
-      const stopResult = await actionStopPM2Process(process);
-      await actionNotifyClickUp(process, "spike", spikeResult.status, stopResult);
+      actions.length > 0 && console.log(actions);
+
+      for (const action of actions) {
+        const actionResult = await action(pm2Process, detectionResult);
+        console.log(actionResult);
+      }
     }
 
-    if (trendResult.status === Status.ABOVE_NORMAL) {
-      await actionNotifyClickUp(process, "trend", trendResult.status, "no action");
-    }
+    const logEntry = {
+      id: pm2Process.id,
+      name: pm2Process.name,
+      samples: [...entry.samples],
+      statuses: detectionResults.map(r => ({ status: r.status, message: r.message }))
+    };
+
+    console.log(JSON.stringify(logEntry));
   }
 }
 
-console.log("Começando regulação dos processos PM2")
-monitorProcesses();
+async function main() {
+  clickUp.auth(process.env.CLICKUP_API_KEY);
 
-setInterval(() => {
-  monitorProcesses();
-}, SAMPLES_INTERVAL);
+  console.log(`Regulando processos PM2 a cada ${SAMPLES_INTERVAL / 1000}s`);
+  await regulatePM2Processes();
+
+  setInterval(async () => {
+    await regulatePM2Processes();
+  }, SAMPLES_INTERVAL);
+}
+
+main();
