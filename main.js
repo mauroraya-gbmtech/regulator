@@ -1,4 +1,4 @@
-const clickUp = require("@api/clickup");
+const clickUp = require("./.api/apis/clickup");
 
 const { exec } = require("child_process");
 const util = require("util");
@@ -179,7 +179,7 @@ async function getPM2Processes() {
 
     const pm2ProcessesList = JSON.parse(stdout.slice(jsonStart));
 
-    return pm2ProcessesList.map(p => ({
+    return pm2ProcessesList.map(pm2Process => ({
       id: pm2Process.pm_id,
       name: pm2Process.name,
       memory: toMB(pm2Process.monit.memory)
