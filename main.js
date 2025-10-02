@@ -5,72 +5,53 @@ const util = require("util");
 
 const execAsync = util.promisify(exec);
 
-const pm2ProcessesMap = new Map();
-
 const SAMPLES_INTERVAL = 30 * 1000;
 const SAMPLES_LENGTH = 5;
 
-/**
- * @enum
- */
-const Usage = {
-  LOW: "LOW",
-  BELOW_NORMAL: "BELOW_NORMAL",
-  NORMAL: "NORMAL",
-  ABOVE_NORMAL: "ABOVE_NORMAL",
-  HIGH: "HIGH"
-};
+const map = new Map();
 
 /**
- * @typedef {Object} DetectionResult
- * @property {Usage} status
- * @property {string} message
+ * @param {number[]} samples - List of data collected over time series
+ * @param {String} type - Type of data collected (CPU Usage, RAM...)
+ * @param {number} threshold - Threshold value to trigger the detection
+ * @param {String[]} messages - List of messages for the plataform notification
+ * @returns {String}
  */
-
-/**
- * @param {number[]} samples
- * @returns {DetectionResult}
- */
-function detectSpike(samples) {
+function detectSpike(samples, type, threshold, messages) {
   const max = Math.max(...samples);
   const min = Math.min(...samples);
 
   const diff = max - min;
 
-  if (diff > 100) {
-    return {
-      status: Usage.HIGH,
-      message: `Uso de memória RAM teve um pico de ${diff} MB`
-    };
+  if (diff > threshold) {
+    messages.push(`Uso de ${type} teve um pico de ${diff} MB`);
+    return "HIGH";
   }
 
-  return {
-    status: Usage.NORMAL,
-    message: "Nenhum pico de memória RAM detectado"
-  };
+  messages.push(`Uso de ${type} teve um pico de ${diff} MB`);
+  return "NORMAL";
 }
 
 /**
- * @param {number[]} samples
- * @returns {DetectionResult}
+ * @param {number[]} samples - List of data collected over time series
+ * @param {String} type - Type of data collected (CPU Usage, RAM...)
+ * @param {number} threshold - Threshold value to trigger the detection
+ * @param {String[]} messages - List of messages for the plataform notification
+ * @returns {String}
  */
-function detectTrend(samples) {
+function detectTrend(samples, type, threshold, messages) {
   const first = samples[0];
   const last = samples[samples.length - 1];
 
   const slope = (last - first) / first;
 
-  if (slope > 0.5) {
-    return {
-      status: Usage.ABOVE_NORMAL,
-      message: `Uso de memória RAM aumentou em ${(slope * 100).toFixed(1)}%`
-    };
+  if (slope > threshold) {
+    messages.push(`Uso de ${type} aumentou em ${(slope * 100).toFixed(1)}%`);
+    return "ABOVE_NORMAL";
   }
 
-  return {
-    status: Usage.NORMAL,
-    message: "Nenhuma tendência de aumento de memória RAM detectado"
-  };
+  messages.push(`Nenhuma tendência de aumento de ${type} detectado`);
+  return "NORMAL";
 }
 
 /**
@@ -239,15 +220,6 @@ async function regulatePM2Processes() {
         console.log(actionResult);
       }
     }
-
-    const logEntry = {
-      id: pm2Process.id,
-      name: pm2Process.name,
-      samples: [...entry.samples],
-      statuses: detectionResults.map(r => ({ status: r.status, message: r.message }))
-    };
-
-    console.log(JSON.stringify(logEntry));
   }
 }
 
@@ -263,3 +235,15 @@ async function main() {
 }
 
 main();
+
+
+
+// get pm2 processes
+
+// store them in a map
+
+// messages = []
+
+// detection -> message, Usage
+
+// for detection 
