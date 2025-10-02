@@ -24,11 +24,10 @@ function detectSpike(samples, type, threshold, messages) {
   const diff = max - min;
 
   if (diff > threshold) {
-    messages.push(`Uso de ${type} teve um pico de ${diff} MB`);
+    messages.push(`🔊 Uso de ${type} teve um pico de ${diff} MB`);
     return "HIGH";
   }
 
-  messages.push(`Uso de ${type} teve um pico de ${diff} MB`);
   return "NORMAL";
 }
 
@@ -46,46 +45,39 @@ function detectTrend(samples, type, threshold, messages) {
   const slope = (last - first) / first;
 
   if (slope > threshold) {
-    messages.push(`Uso de ${type} aumentou em ${(slope * 100).toFixed(1)}%`);
+    messages.push(`🔊 Uso de ${type} aumentou em ${(slope * 100).toFixed(1)}%`);
     return "ABOVE_NORMAL";
   }
 
-  messages.push(`Nenhuma tendência de aumento de ${type} detectado`);
   return "NORMAL";
 }
 
 /**
- * @typedef {Object} PM2Process
- * @property {number} id
- * @property {string} name
- * @property {number} memory
+ * @param {Object} _process 
+ * @param {String[]} messages 
+ * @returns {String}
  */
+async function actionStopPM2Process(_process, messages) {
+  if (!_process.id) {
+    messages.push(`❌ Erro, ID do processo do PM2 ${_process.name} indefinido`);
+    return "FAILURE";
+  }
+
+  try {
+    await execAsync(`pm2 stop ${_process.id}`);
+
+    messages.push(`✅ Processo do PM2 ${_process.name} foi parado com sucesso`);
+    return "SUCCESS";
+  } catch (err) {
+    messages.push(`❌ Erro ao tentar parar processo do PM2 ${_process.name}`);
+    return "FAILURE";
+  }
+}
 
 /**
- * @enum
+ * @param {String} message 
  */
-const Status = {
-  SUCCESS: "SUCCESS",
-  FAILURE: "FAILURE"
-};
-
-/**
- * @typedef {Object} ActionResult
- * @property {Status} status
- * @property {string} message
- */
-
-/**
- * @param {PM2Process} pm2Process
- * @param {DetectionResult} result
- * @returns {Promise<ActionResult>}
- */
-async function actionNotifyClickUp(pm2Process, result) {
-  const message = [
-    `⚙️ ${pm2Process.name}`,
-    `🔊 ${result.message}`
-  ].join('\n');
-
+async function createChatMessageClickUp(message) {
   /** @type {CreateChatMessageBodyParam} */
   const body = {
     type: "message",
@@ -101,44 +93,12 @@ async function actionNotifyClickUp(pm2Process, result) {
 
   try {
     const response = await clickUp.createChatMessage(body, metadata);
-
-    if (!response.ok) {
-      return {
-        status: Status.FAILURE,
-        message: "Erro ao tentar enviar mensagem para o ClickUp"
-      };
+    
+    if (!response.res.ok) {
+      console.error("Erro ao tentar enviar mensagem para o ClickUp");
     }
-
-    return {
-      status: Status.SUCCESS,
-      message: "Mensagem enviada ao ClickUp com sucesso"
-    };
   } catch (err) {
-    return {
-      status: Status.FAILURE,
-      message: `Erro inesperado ao tentar enviar mensagem para o ClickUp: ${err.message}`
-    };
-  }
-}
-
-/**
- * @param {PM2Process} pm2Process
- * @param {DetectionResult} result
- * @returns {Promise<ActionResult>}
- */
-async function actionStopPM2Process(pm2Process, result) {
-  try {
-    await execAsync(`pm2 stop ${pm2Process.id}`);
-
-    return {
-      status: Status.SUCCESS,
-      message: `Processo do PM2 ${pm2Process.name} foi parado com sucesso`
-    };
-  } catch (err) {
-    return {
-      status: Status.FAILURE,
-      message: `Erro ao tentar parar processo do PM2 ${pm2Process.name}`
-    };
+    console.error(`Erro inesperado ao tentar enviar mensagem para o ClickUp: ${err.message}`);
   }
 }
 
@@ -147,7 +107,7 @@ function toMB(bytes) {
 }
 
 /**
- * @returns {Promise<PM2Process[]>}
+ * @returns {Promise<Object[]>}
  */
 async function getPM2Processes() {
   try {
@@ -158,12 +118,12 @@ async function getPM2Processes() {
       throw new Error("Não foi possível encontrar uma saída JSON do comando 'pm2 jlist'");
     }
 
-    const pm2ProcessesList = JSON.parse(stdout.slice(jsonStart));
+    const processes = JSON.parse(stdout.slice(jsonStart));
 
-    return pm2ProcessesList.map(pm2Process => ({
-      id: pm2Process.pm_id,
-      name: pm2Process.name,
-      memory: toMB(pm2Process.monit.memory)
+    return processes.map(_process => ({
+      id: _process.pm_id,
+      name: _process.name,
+      memory: toMB(_process.monit.memory)
     }));
   } catch (err) {
     console.error("Erro ao tentar ler os processos do PM2:", err);
@@ -171,79 +131,62 @@ async function getPM2Processes() {
   }
 }
 
-const rules = {
-  [Usage.HIGH]: [
-    actionNotifyClickUp,
-    actionStopPM2Process,
-  ],
-  [Usage.ABOVE_NORMAL]: [
-    actionNotifyClickUp
-  ]
-};
+async function regulate() {
+  const processes = await getPM2Processes();
+  const messages = [];
 
-async function regulatePM2Processes() {
-  const pm2ProcessesList = await getPM2Processes();
-
-  for (const pm2Process of pm2ProcessesList) {
-    if (!pm2ProcessesMap.has(pm2Process.id)) {
-      pm2ProcessesMap.set(pm2Process.id, { name: pm2Process.name, samples: [] });
+  for (const _process of processes) {
+    if (!map.has(_process.id)) {
+      map.set(_process.id, { name: _process.name, samples: [] });
     }
 
-    const entry = pm2ProcessesMap.get(pm2Process.id);
+    const entry = map.get(_process.id);
 
-    //teste
-    if (
-      entry.samples.length === 0 &&
-      pm2Process.id === 20
-    ) {
-      entry.samples.push(300);
-    } else {
-      entry.samples.push(pm2Process.memory);
-    }
+    entry.samples.push(_process.memory);
 
-    if (entry.samples.length > SAMPLES_LENGTH) {
+    if (entry.samples.length >= SAMPLES_LENGTH) {
       entry.samples.shift();
     }
 
-    const detectionResults = [
-      detectSpike(entry.samples), 
-      detectTrend(entry.samples)
-    ];
+    const results = [
+      detectSpike(entry.samples, "RAM", 150, messages),
+      detectTrend(entry.samples, "RAM", 0.5, messages)
+    ]
 
-    for (const detectionResult of detectionResults) {
-      const actions = rules[detectionResult.status] ?? [];
+    for (const result of results) {
+      if (
+        result === "BELOW_NORMAL" ||
+        result === "LOW" ||
+        result === "NORMAL"
+      ) continue;
 
-      actions.length > 0 && console.log(actions);
-
-      for (const action of actions) {
-        const actionResult = await action(pm2Process, detectionResult);
-        console.log(actionResult);
+      if (result === "HIGH") {
+        await actionStopPM2Process(_process, messages);
       }
+
+      messages.unshift(`🔎 ${_process.name}`);
+      const message = messages.join("\n");
+
+      await createChatMessageClickUp(message);
+
+      messages.length = 0;
     }
+
+    console.log(`[${_process.id}] - ${_process.name} - [${entry.samples}] - ${results}`);
   }
+
+  console.log();
 }
 
 async function main() {
   clickUp.auth(process.env.CLICKUP_API_KEY);
 
-  console.log(`Regulando processos PM2 a cada ${SAMPLES_INTERVAL / 1000}s`);
-  await regulatePM2Processes();
+  console.log(`Regulando processos do PM2 a cada ${SAMPLES_INTERVAL / 1000}s`);
+  await regulate();
 
   setInterval(async () => {
-    await regulatePM2Processes();
+    await regulate();
   }, SAMPLES_INTERVAL);
 }
 
 main();
-
-
-
-// get pm2 processes
-
-// store them in a map
-
-// messages = []
-
-// detection -> message, Usage
-
-// for detection 
