@@ -5,8 +5,10 @@ const util = require("util");
 
 const execAsync = util.promisify(exec);
 
-const SAMPLES_INTERVAL = 30 * 1000;
+const SAMPLES_INTERVAL = 60 * 1000;
 const SAMPLES_LENGTH = 5;
+
+const CLICKUP_CREATE_MESSAGE_COOLDOWN = SAMPLES_LENGTH * 60 * 1000; 
 
 const map = new Map();
 
@@ -123,7 +125,7 @@ async function getPM2Processes() {
     return processes.map(_process => ({
       id: _process.pm_id,
       name: _process.name,
-      memory: toMB(_process.monit.memory)
+      memory: toMB(_process.monit.memory),
     }));
   } catch (err) {
     console.error("Erro ao tentar ler os processos do PM2:", err);
@@ -137,7 +139,11 @@ async function regulate() {
 
   for (const _process of processes) {
     if (!map.has(_process.id)) {
-      map.set(_process.id, { name: _process.name, samples: [] });
+      map.set(_process.id, { 
+        name: _process.name, 
+        samples: [],
+        timestamp: Date.now()
+      });
     }
 
     const entry = map.get(_process.id);
@@ -151,7 +157,7 @@ async function regulate() {
     const results = [
       detectSpike(entry.samples, "RAM", 150, messages),
       detectTrend(entry.samples, "RAM", 0.5, messages)
-    ]
+    ];
 
     for (const result of results) {
       if (
@@ -167,7 +173,14 @@ async function regulate() {
       messages.unshift(`🔎 ${_process.name}`);
       const message = messages.join("\n");
 
+      const now = Date.now();
+
+      if (now - entry.timestamp < CLICKUP_CREATE_MESSAGE_COOLDOWN) {
+        continue;
+      }
+
       await createChatMessageClickUp(message);
+      entry.timestamp = now;
 
       messages.length = 0;
     }
