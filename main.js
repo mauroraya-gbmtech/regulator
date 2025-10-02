@@ -150,7 +150,7 @@ async function regulate() {
 
     entry.samples.push(_process.memory);
 
-    if (entry.samples.length >= SAMPLES_LENGTH) {
+    if (entry.samples.length > SAMPLES_LENGTH) {
       entry.samples.shift();
     }
 
