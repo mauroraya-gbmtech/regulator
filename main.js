@@ -44,7 +44,7 @@ function detectTrend(samples, type, threshold, messages) {
   const first = samples[0];
   const last = samples[samples.length - 1];
 
-  const slope = (last - first) / first;
+  const slope = last - first;
 
   if (slope > threshold) {
     messages.push(`🔊 Uso de ${type} aumentou em ${(slope * 100).toFixed(1)}%`);
@@ -155,8 +155,8 @@ async function regulate() {
     }
 
     const results = [
-      detectSpike(entry.samples, "RAM", 150, messages),
-      detectTrend(entry.samples, "RAM", 0.5, messages)
+      detectSpike(entry.samples, "RAM", 60, messages),
+      detectTrend(entry.samples, "RAM", 30, messages)
     ];
 
     for (const result of results) {
