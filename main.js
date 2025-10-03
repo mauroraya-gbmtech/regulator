@@ -5,10 +5,10 @@ const util = require("util");
 
 const execAsync = util.promisify(exec);
 
-const SAMPLES_INTERVAL = 60 * 1000;
+const SAMPLES_INTERVAL = 30 * 1000;
 const SAMPLES_LENGTH = 5;
 
-const CLICKUP_CREATE_MESSAGE_COOLDOWN = SAMPLES_LENGTH * 60 * 1000; 
+const CLICKUP_CREATE_MESSAGE_COOLDOWN = SAMPLES_LENGTH * SAMPLES_INTERVAL; 
 
 const map = new Map();
 
