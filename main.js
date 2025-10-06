@@ -15,7 +15,7 @@ const map = new Map();
 /**
  * @param {number[]} samples - List of data collected over time series
  * @param {String} type - Type of data collected (CPU Usage, RAM...)
- * @param {number} threshold - Threshold value to trigger the detection
+ * @param {number} threshold - Threshold value in MB to trigger the detection
  * @param {String[]} messages - List of messages for the plataform notification
  * @returns {String}
  */
@@ -36,7 +36,7 @@ function detectSpike(samples, type, threshold, messages) {
 /**
  * @param {number[]} samples - List of data collected over time series
  * @param {String} type - Type of data collected (CPU Usage, RAM...)
- * @param {number} threshold - Threshold value to trigger the detection
+ * @param {number} threshold - Threshold value in MB to trigger the detection
  * @param {String[]} messages - List of messages for the plataform notification
  * @returns {String}
  */
@@ -47,7 +47,7 @@ function detectTrend(samples, type, threshold, messages) {
   const slope = last - first;
 
   if (slope > threshold) {
-    messages.push(`🔊 Uso de ${type} aumentou em ${(slope * 100).toFixed(1)}%`);
+    messages.push(`🔊 Uso de ${type} aumentou em ${slope} MB`);
     return "ABOVE_NORMAL";
   }
 
