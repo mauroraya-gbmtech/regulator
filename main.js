@@ -68,10 +68,10 @@ async function actionRestartPM2Process(_process, messages) {
   try {
     await execAsync(`pm2 restart ${_process.id}`);
 
-    messages.push(`✅ Processo do PM2 ${_process.name} foi parado com sucesso`);
+    messages.push(`✅ Processo do PM2 ${_process.name} foi reiniciado com sucesso`);
     return "SUCCESS";
   } catch (err) {
-    messages.push(`❌ Erro ao tentar parar processo do PM2 ${_process.name}`);
+    messages.push(`❌ Erro ao tentar reiniciar processo do PM2 ${_process.name}`);
     return "FAILURE";
   }
 }
