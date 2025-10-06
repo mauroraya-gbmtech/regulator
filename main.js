@@ -59,14 +59,14 @@ function detectTrend(samples, type, threshold, messages) {
  * @param {String[]} messages 
  * @returns {String}
  */
-async function actionStopPM2Process(_process, messages) {
+async function actionRestartPM2Process(_process, messages) {
   if (!_process.id) {
     messages.push(`❌ Erro, ID do processo do PM2 ${_process.name} indefinido`);
     return "FAILURE";
   }
 
   try {
-    await execAsync(`pm2 stop ${_process.id}`);
+    await execAsync(`pm2 restart ${_process.id}`);
 
     messages.push(`✅ Processo do PM2 ${_process.name} foi parado com sucesso`);
     return "SUCCESS";
@@ -155,8 +155,8 @@ async function regulate() {
     }
 
     const results = [
-      detectSpike(entry.samples, "RAM", 60, messages),
-      detectTrend(entry.samples, "RAM", 30, messages)
+      detectSpike(entry.samples, "RAM", 200, messages),
+      detectTrend(entry.samples, "RAM", 50, messages)
     ];
 
     for (const result of results) {
@@ -167,7 +167,7 @@ async function regulate() {
       ) continue;
 
       if (result === "HIGH") {
-        await actionStopPM2Process(_process, messages);
+        await actionRestartPM2Process(_process, messages);
       }
 
       messages.unshift(`🔎 ${_process.name}`);
