@@ -170,7 +170,8 @@ async function regulate() {
         await actionRestartPM2Process(_process, messages);
       }
 
-      messages.unshift(`🔎 ${_process.name}`);
+      messages.unshift(`🔎 [${_process.id}] - ${_process.name}`);
+      messages.unshift(`🟨 ${process.env.EC2_INSTANCE_NAME}`);
       const message = messages.join("\n");
 
       const now = Date.now();

@@ -30,16 +30,18 @@ then
     exit 1
 fi
 
-if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
-    echo "Uso: ./setup.sh <CLICKUP_API_KEY> <CLICKUP_WORKSPACE_ID> <CLICKUP_CHANNEL_ID>"
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]; then
+    echo "Uso: ./setup.sh <EC2_INSTANCE_NAME> <CLICKUP_API_KEY> <CLICKUP_WORKSPACE_ID> <CLICKUP_CHANNEL_ID>"
     exit 1
 fi
 
-export CLICKUP_API_KEY=$1
-export CLICKUP_WORKSPACE_ID=$2
-export CLICKUP_CHANNEL_ID=$3
+export EC2_INSTANCE_NAME=$1
+export CLICKUP_API_KEY=$2
+export CLICKUP_WORKSPACE_ID=$3
+export CLICKUP_CHANNEL_ID=$4
 
 echo "Variáveis de ambiente configuradas:"
+echo "EC2_INSTANCE_NAME=$EC2_INSTANCE_NAME"
 echo "CLICKUP_API_KEY=$CLICKUP_API_KEY"
 echo "CLICKUP_WORKSPACE_ID=$CLICKUP_WORKSPACE_ID"
 echo "CLICKUP_CHANNEL_ID=$CLICKUP_CHANNEL_ID"
@@ -47,6 +49,14 @@ echo "CLICKUP_CHANNEL_ID=$CLICKUP_CHANNEL_ID"
 DEFAULT_NODE=$(nvm alias default | awk '{print $3}')
 
 nvm use 20
+
+echo "Instalando dependências em .api/apis/clickup..."
+CURRENT_DIR=$(pwd)
+
+cd .api/apis/clickup
+npm install
+
+cd "$CURRENT_DIR"
 
 echo "Iniciando o monitoramento dos processos..."
 node main.js
